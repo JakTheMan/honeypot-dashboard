@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSH Honeypot Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        .stat-card h3 {
+            color: #666;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .chart-card {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .chart-card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 15px;
+        }
+
+        .refresh-btn:hover {
+            background: #764ba2;
+            transform: scale(1.05);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: white;
+            font-size: 1.5em;
+        }
+
+        .command-list {
+            list-style: none;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .command-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f5f5f5;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .command-count {
+            background: #667eea;
+            color: white;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.9em;
+        }
+
+        .last-update {
+            color: rgba(255,255,255,0.8);
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🍯 SSH Honeypot Dashboard</h1>
+            <p class="subtitle">Real-time Attack Monitoring & Analysis</p>
+            <button class="refresh-btn" onclick="loadData()">🔄 Refresh Data</button>
+        </header>
+
+        <div id="loading" class="loading">Loading attack data...</div>
+
+        <div id="dashboard" style="display: none;">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Connections</h3>
+                    <div class="stat-value" id="total-connections">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Login Attempts</h3>
+                    <div class="stat-value" id="login-attempts">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Successful Logins</h3>
+                    <div class="stat-value" id="successful-logins">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Unique Attackers</h3>
+                    <div class="stat-value" id="unique-ips">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Commands Executed</h3>
+                    <div class="stat-value" id="total-commands">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Avg Session (sec)</h3>
+                    <div class="stat-value" id="avg-session">0</div>
+                </div>
+            </div>
+
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h2>Top Usernames</h2>
+                    <canvas id="usernamesChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h2>Top Passwords</h2>
+                    <canvas id="passwordsChart"></canvas>
+                </div>
+                <div class="chart-card full-width">
+                    <h2>Attack Timeline</h2>
+                    <canvas id="timelineChart"></canvas>
+                </div>
+                <div class="chart-card full-width">
+                    <h2>Commands Executed by Attackers</h2>
+                    <ul class="command-list" id="commandsList"></ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="last-update">
+            Last updated: <span id="last-update">Never</span>
+        </div>
+    </div>
+
+    <script>
+        let charts = {};
+
+        async function loadData() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                
+                updateStats(data.summary);
+                updateCharts(data);
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
+                document.getElementById('last-update').textContent = new Date().toLocaleString();
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('loading').textContent = 'Error loading data. Is the server running?';
+            }
+        }
+
+        function updateStats(summary) {
+            document.getElementById('total-connections').textContent = summary.total_connections;
+            document.getElementById('login-attempts').textContent = summary.total_login_attempts;
+            document.getElementById('successful-logins').textContent = summary.successful_logins;
+            document.getElementById('unique-ips').textContent = summary.unique_ips;
+            document.getElementById('total-commands').textContent = summary.total_commands;
+            document.getElementById('avg-session').textContent = summary.avg_session_duration;
+        }
+
+        function updateCharts(data) {
+            // Usernames Chart
+            updateBarChart('usernamesChart', data.top_usernames, 'Username', 'rgba(102, 126, 234, 0.8)');
+            
+            // Passwords Chart
+            updateBarChart('passwordsChart', data.top_passwords, 'Password', 'rgba(118, 75, 162, 0.8)');
+            
+            // Timeline Chart
+            updateTimelineChart(data.timeline);
+            
+            // Commands List
+            updateCommandsList(data.top_commands);
+        }
+
+        function updateBarChart(chartId, data, label, color) {
+            const ctx = document.getElementById(chartId).getContext('2d');
+            
+            if (charts[chartId]) {
+                charts[chartId].destroy();
+            }
+
+            charts[chartId] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.map(item => item.name),
+                    datasets: [{
+                        label: label,
+                        data: data.map(item => item.count),
+                        backgroundColor: color,
+                        borderRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateTimelineChart(timeline) {
+            const ctx = document.getElementById('timelineChart').getContext('2d');
+            
+            if (charts['timelineChart']) {
+                charts['timelineChart'].destroy();
+            }
+
+            charts['timelineChart'] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timeline.map(item => item.time.substring(11)),
+                    datasets: [{
+                        label: 'Events',
+                        data: timeline.map(item => item.count),
+                        borderColor: 'rgba(102, 126, 234, 1)',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateCommandsList(commands) {
+            const list = document.getElementById('commandsList');
+            list.innerHTML = '';
+            
+            commands.forEach(cmd => {
+                const li = document.createElement('li');
+                li.className = 'command-item';
+                li.innerHTML = `
+                    <span>${cmd.name}</span>
+                    <span class="command-count">${cmd.count}x</span>
+                `;
+                list.appendChild(li);
+            });
+        }
+
+        // Load data on page load
+        loadData();
+
+        // Auto-refresh every 10 seconds
+        setInterval(loadData, 10000);
+    </script>
+</body>
+</html>
